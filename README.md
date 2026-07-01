@@ -16,6 +16,14 @@ Number Tug is a same-device, two-player arithmetic tug-of-war game. Each player 
 - Medium: quicker timer, larger numbers
 - Hard: fast timer, larger ranges, stronger pulls
 
+## Fun Features
+
+- Players can choose their names and face avatars before the match starts.
+- Fast correct answers pull harder.
+- Back-to-back correct answers build a streak bonus.
+- Sound effects can be toggled on or off.
+- Haptics use the browser Vibration API when the device supports it, with visual and sound feedback as the fallback.
+
 ## Run Locally
 
 ```bash
@@ -44,3 +52,7 @@ The app uses `base: './'` in `vite.config.ts`, so built assets work from a GitHu
 ## Build Prompts
 
 The prompts that shaped this version live in `docs/build-prompts.md`.
+
+## Research Notes
+
+The game-feel notes behind the latest version live in `docs/fun-game-patterns.md`.
