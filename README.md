@@ -2,6 +2,17 @@
 
 Number Tug is a same-device, two-player arithmetic tug-of-war game. Each player gets mirrored answer buttons, and the first correct answer pulls the rope toward their side. Wrong answers nudge the rope away.
 
+## Ways To Play
+
+- Two Players: both players can click/tap their answer side, or share one keyboard.
+- Vs CPU: Player 1 answers while the computer controls Player 2.
+
+## Computer Controls
+
+- Player 1 uses `A`, `S`, `D`, `F` for the four answer buttons on the left.
+- Player 2 uses `J`, `K`, `L`, `;` for the four answer buttons on the right.
+- In Vs CPU mode, Player 1 still uses `A`, `S`, `D`, `F`; the CPU answers automatically.
+
 ## Modes
 
 - Add

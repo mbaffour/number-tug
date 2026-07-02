@@ -3,6 +3,7 @@ import './App.css'
 
 type Operation = 'add' | 'subtract' | 'multiply' | 'divide' | 'mixed'
 type Difficulty = 'easy' | 'medium' | 'hard'
+type GameMode = 'local' | 'cpu'
 type PlayerId = 'one' | 'two'
 type Phase = 'setup' | 'playing' | 'gameOver'
 type FeedbackKind = 'correct' | 'wrong' | 'timeout' | 'win'
@@ -50,8 +51,18 @@ const difficulties: Array<{ id: Difficulty; label: string }> = [
   { id: 'hard', label: 'Hard' },
 ]
 
+const gameModes: Array<{ id: GameMode; label: string }> = [
+  { id: 'local', label: 'Two Players' },
+  { id: 'cpu', label: 'Vs CPU' },
+]
+
 const faceOptions = ['😄', '😎', '🤓', '🥳', '🙂', '😃', '🤠', '😇']
 const burstPieces = ['+', '−', '×', '÷', '★', '?']
+const playerKeys: Record<PlayerId, string[]> = {
+  one: ['a', 's', 'd', 'f'],
+  two: ['j', 'k', 'l', ';'],
+}
+const cpuProfile: PlayerProfile = { name: 'CPU', face: '🤖' }
 
 const settings = {
   easy: { max: 12, multiplyMax: 6, seconds: 18, pull: 16 },
@@ -139,6 +150,20 @@ function defaultName(player: PlayerId) {
   return player === 'one' ? 'Player 1' : 'Player 2'
 }
 
+function getCpuDelay(difficulty: Difficulty) {
+  const ranges = {
+    easy: [4100, 6800],
+    medium: [2500, 4700],
+    hard: [1400, 3000],
+  } satisfies Record<Difficulty, [number, number]>
+  const [min, max] = ranges[difficulty]
+  return randomInt(min, max)
+}
+
+function getCpuAccuracy(difficulty: Difficulty) {
+  return difficulty === 'easy' ? 0.7 : difficulty === 'medium' ? 0.82 : 0.92
+}
+
 function triggerHaptic(enabled: boolean, pattern: number | number[]) {
   if (!enabled || typeof navigator === 'undefined') return
   if ('vibrate' in navigator && typeof navigator.vibrate === 'function') {
@@ -187,6 +212,7 @@ function playSound(enabled: boolean, kind: FeedbackKind | 'start' | 'tap') {
 }
 
 function App() {
+  const [gameMode, setGameMode] = useState<GameMode>('local')
   const [mode, setMode] = useState<Operation>('add')
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [phase, setPhase] = useState<Phase>('setup')
@@ -199,6 +225,7 @@ function App() {
   const [questionStartedAt, setQuestionStartedAt] = useState(Date.now())
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [roundResolved, setRoundResolved] = useState(false)
+  const [cpuAttemptedRound, setCpuAttemptedRound] = useState(0)
   const [soundOn, setSoundOn] = useState(true)
   const [hapticsOn, setHapticsOn] = useState(true)
   const [impact, setImpact] = useState<FeedbackKind | null>(null)
@@ -209,8 +236,11 @@ function App() {
   })
 
   const getDisplayName = useCallback(
-    (player: PlayerId) => profiles[player].name.trim() || defaultName(player),
-    [profiles],
+    (player: PlayerId) =>
+      gameMode === 'cpu' && player === 'two'
+        ? cpuProfile.name
+        : profiles[player].name.trim() || defaultName(player),
+    [gameMode, profiles],
   )
 
   const winner = useMemo(() => {
@@ -307,72 +337,164 @@ function App() {
     setQuestionStartedAt(Date.now())
     setFeedback(null)
     setRoundResolved(false)
+    setCpuAttemptedRound(0)
     setBurst(null)
   }
 
-  function answerQuestion(player: PlayerId, choice: number) {
-    if (phase !== 'playing' || roundResolved) return
+  const answerQuestion = useCallback(
+    (player: PlayerId, choice: number) => {
+      if (phase !== 'playing' || roundResolved) return
 
-    playSound(soundOn, 'tap')
-    const direction = player === 'one' ? -1 : 1
+      playSound(soundOn, 'tap')
+      const direction = player === 'one' ? -1 : 1
 
-    if (choice !== question.answer) {
-      setPull((current) => clampPull(current - direction * 5))
-      setStreaks((current) => ({ ...current, [player]: 0 }))
+      if (choice !== question.answer) {
+        setPull((current) => clampPull(current - direction * 5))
+        setStreaks((current) => ({ ...current, [player]: 0 }))
+        setFeedback({
+          player,
+          kind: 'wrong',
+          text: `${getDisplayName(player)} guessed ${choice}`,
+        })
+        makeImpact('wrong')
+        return
+      }
+
+      setRoundResolved(true)
+      const elapsed = (Date.now() - questionStartedAt) / 1000
+      const nextStreak = streaks[player] + 1
+      const speedBonus = Math.max(
+        0,
+        Math.ceil((settings[difficulty].seconds - elapsed) / 4),
+      )
+      const streakBonus = nextStreak >= 2 ? Math.min(10, nextStreak * 2) : 0
+      const gain = settings[difficulty].pull + speedBonus + streakBonus
+      const feedbackText =
+        streakBonus > 0
+          ? `${getDisplayName(player)} pulls +${gain} - ${nextStreak} streak`
+          : `${getDisplayName(player)} pulls +${gain}`
+
+      setScores((current) => ({
+        ...current,
+        [player]: current[player] + 1,
+      }))
+      setStreaks((current) => ({
+        ...current,
+        [player]: nextStreak,
+      }))
+      setPull((current) => {
+        const nextPull = clampPull(current + direction * gain)
+        if (Math.abs(nextPull) >= ropeLimit) {
+          window.setTimeout(() => {
+            setPhase('gameOver')
+            makeImpact('win')
+          }, 220)
+        }
+        return nextPull
+      })
       setFeedback({
         player,
-        kind: 'wrong',
-        text: `${getDisplayName(player)} guessed ${choice}`,
+        kind: 'correct',
+        text: feedbackText,
       })
-      makeImpact('wrong')
+      setBurst({
+        id: Date.now(),
+        player,
+        text: streakBonus > 0 ? `+${gain} streak` : `+${gain}`,
+      })
+      makeImpact('correct')
+      window.setTimeout(() => advanceRound(), 520)
+    },
+    [
+      advanceRound,
+      difficulty,
+      getDisplayName,
+      makeImpact,
+      phase,
+      question.answer,
+      questionStartedAt,
+      roundResolved,
+      soundOn,
+      streaks,
+    ],
+  )
+
+  useEffect(() => {
+    if (phase !== 'playing') return
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat) return
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
+      ) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      const playerOneIndex = playerKeys.one.indexOf(key)
+      const playerTwoIndex = playerKeys.two.indexOf(key)
+
+      if (playerOneIndex >= 0) {
+        event.preventDefault()
+        answerQuestion('one', question.choices[playerOneIndex])
+        return
+      }
+
+      if (gameMode === 'local' && playerTwoIndex >= 0) {
+        event.preventDefault()
+        answerQuestion('two', question.choices[playerTwoIndex])
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [answerQuestion, gameMode, phase, question.choices])
+
+  useEffect(() => {
+    if (
+      gameMode !== 'cpu' ||
+      phase !== 'playing' ||
+      roundResolved ||
+      cpuAttemptedRound === round
+    ) {
       return
     }
 
-    setRoundResolved(true)
-    const elapsed = (Date.now() - questionStartedAt) / 1000
-    const nextStreak = streaks[player] + 1
-    const speedBonus = Math.max(0, Math.ceil((secondsLeft - elapsed) / 4))
-    const streakBonus = nextStreak >= 2 ? Math.min(10, nextStreak * 2) : 0
-    const gain = settings[difficulty].pull + speedBonus + streakBonus
-    const feedbackText =
-      streakBonus > 0
-        ? `${getDisplayName(player)} pulls +${gain} - ${nextStreak} streak`
-        : `${getDisplayName(player)} pulls +${gain}`
+    const delay = getCpuDelay(difficulty)
+    const timeout = window.setTimeout(() => {
+      setCpuAttemptedRound(round)
+      const shouldAnswerCorrectly = Math.random() < getCpuAccuracy(difficulty)
+      const wrongChoices = question.choices.filter(
+        (choice) => choice !== question.answer,
+      )
+      const cpuChoice = shouldAnswerCorrectly
+        ? question.answer
+        : wrongChoices[randomInt(0, wrongChoices.length - 1)] ?? question.answer
 
-    setScores((current) => ({
-      ...current,
-      [player]: current[player] + 1,
-    }))
-    setStreaks((current) => ({
-      ...current,
-      [player]: nextStreak,
-    }))
-    setPull((current) => {
-      const nextPull = clampPull(current + direction * gain)
-      if (Math.abs(nextPull) >= ropeLimit) {
-        window.setTimeout(() => {
-          setPhase('gameOver')
-          makeImpact('win')
-        }, 220)
-      }
-      return nextPull
-    })
-    setFeedback({
-      player,
-      kind: 'correct',
-      text: feedbackText,
-    })
-    setBurst({
-      id: Date.now(),
-      player,
-      text: streakBonus > 0 ? `+${gain} streak` : `+${gain}`,
-    })
-    makeImpact('correct')
-    window.setTimeout(() => advanceRound(), 520)
-  }
+      answerQuestion('two', cpuChoice)
+    }, delay)
+
+    return () => window.clearTimeout(timeout)
+  }, [
+    answerQuestion,
+    cpuAttemptedRound,
+    difficulty,
+    gameMode,
+    phase,
+    question,
+    round,
+    roundResolved,
+  ])
 
   const markerPosition = `${50 + pull / 2}%`
   const canChangeSettings = phase !== 'playing'
+  const playerTwoProfile = gameMode === 'cpu' ? cpuProfile : profiles.two
+  const keyHint =
+    gameMode === 'cpu'
+      ? 'Computer keys: Player 1 uses A S D F. CPU answers automatically.'
+      : 'Computer keys: Player 1 uses A S D F. Player 2 uses J K L ;.'
   const boardClassName = `game-board${impact ? ` impact-${impact}` : ''}`
 
   return (
@@ -423,6 +545,7 @@ function App() {
             accent="teal"
             choices={question.choices}
             disabled={roundResolved || phase !== 'playing'}
+            keyLabels={playerKeys.one.map((key) => key.toUpperCase())}
             label={getDisplayName('one')}
             onAnswer={(choice) => answerQuestion('one', choice)}
             profile={profiles.one}
@@ -467,15 +590,22 @@ function App() {
                 ? winner
                 : feedback?.text ?? 'Tap the answer before your opponent.'}
             </div>
+            <p className="key-hint">{keyHint}</p>
           </div>
 
           <PlayerPanel
             accent="coral"
             choices={question.choices}
-            disabled={roundResolved || phase !== 'playing'}
+            disabled={roundResolved || phase !== 'playing' || gameMode === 'cpu'}
+            isCpu={gameMode === 'cpu'}
+            keyLabels={
+              gameMode === 'local'
+                ? playerKeys.two.map((key) => key.toUpperCase())
+                : undefined
+            }
             label={getDisplayName('two')}
             onAnswer={(choice) => answerQuestion('two', choice)}
-            profile={profiles.two}
+            profile={playerTwoProfile}
             score={scores.two}
             streak={streaks.two}
           />
@@ -490,16 +620,23 @@ function App() {
               updateProfile={updateProfile}
             />
             <ProfileEditor
-              disabled={!canChangeSettings}
+              disabled={!canChangeSettings || gameMode === 'cpu'}
               player="two"
-              profile={profiles.two}
+              profile={playerTwoProfile}
               updateProfile={updateProfile}
             />
           </div>
 
           <SegmentedControl
             disabled={!canChangeSettings}
-            label="Mode"
+            label="Game"
+            onChange={setGameMode}
+            options={gameModes}
+            value={gameMode}
+          />
+          <SegmentedControl
+            disabled={!canChangeSettings}
+            label="Math"
             onChange={setMode}
             options={operations}
             value={mode}
@@ -524,6 +661,8 @@ function PlayerPanel({
   accent,
   choices,
   disabled,
+  isCpu = false,
+  keyLabels,
   label,
   onAnswer,
   profile,
@@ -533,6 +672,8 @@ function PlayerPanel({
   accent: 'teal' | 'coral'
   choices: number[]
   disabled: boolean
+  isCpu?: boolean
+  keyLabels?: string[]
   label: string
   onAnswer: (choice: number) => void
   profile: PlayerProfile
@@ -540,7 +681,10 @@ function PlayerPanel({
   streak: number
 }) {
   return (
-    <section className={`player-panel ${accent}`} aria-label={`${label} area`}>
+    <section
+      className={`player-panel ${accent}${isCpu ? ' cpu-player' : ''}`}
+      aria-label={`${label} area`}
+    >
       <div className="player-banner">
         <span className="avatar" aria-hidden="true">
           {profile.face}
@@ -550,19 +694,25 @@ function PlayerPanel({
           <p>
             Score {score}
             {streak > 1 ? ` - Streak ${streak}` : ''}
+            {isCpu ? ' - Auto' : ''}
           </p>
         </div>
       </div>
 
       <div className="answer-grid">
-        {choices.map((choice) => (
+        {choices.map((choice, index) => (
           <button
             disabled={disabled}
             key={choice}
             type="button"
             onClick={() => onAnswer(choice)}
           >
-            {choice}
+            {keyLabels?.[index] && (
+              <span className="keycap" aria-hidden="true">
+                {keyLabels[index]}
+              </span>
+            )}
+            <span>{choice}</span>
           </button>
         ))}
       </div>
