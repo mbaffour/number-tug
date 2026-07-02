@@ -170,6 +170,43 @@
   background: #e74d3f;
 }
 
+.solo-goal {
+  align-content: start;
+}
+
+.solo-stats {
+  display: grid;
+  gap: 10px;
+}
+
+.solo-stats div {
+  min-height: 82px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 3px solid rgba(16, 29, 52, 0.78);
+  border-radius: 18px;
+  background: rgba(255, 253, 244, 0.86);
+  box-shadow: 0 6px 0 rgba(16, 29, 52, 0.18);
+}
+
+.solo-stats span {
+  color: #5f6e86;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.solo-stats strong {
+  color: #102743;
+  font-family: var(--display);
+  font-size: clamp(36px, 5vw, 58px);
+  line-height: 0.9;
+}
+
 .avatar {
   width: 52px;
   aspect-ratio: 1;
@@ -602,6 +639,18 @@
   font-size: 20px;
 }
 
+.locked-face {
+  width: 46px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(16, 29, 52, 0.24);
+  border-radius: 50%;
+  background: #fffdf4;
+  box-shadow: 0 3px 0 rgba(16, 29, 52, 0.12);
+  font-size: 25px;
+}
+
 .face-row button.selected {
   border-color: #102743;
   background: #fbc949;
@@ -651,6 +700,11 @@
 .toggle-button.active {
   border-color: #102743;
   background: #fbc949;
+}
+
+.test-button {
+  background: #102743;
+  color: #fffdf4;
 }
 
 .toggle-button:focus-visible,
@@ -726,7 +780,7 @@
     align-content: start;
   }
 
-  .player-panel.coral {
+  .player-panel.coral:not(.solo-goal) {
     transform: rotate(180deg);
   }
 
@@ -842,6 +896,11 @@
   .face-row button {
     width: 34px;
     font-size: 18px;
+  }
+
+  .locked-face {
+    width: 40px;
+    font-size: 22px;
   }
 
   .segmented div {

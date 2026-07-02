@@ -1,9 +1,10 @@
 # Number Tug
 
-Number Tug is a same-device, two-player arithmetic tug-of-war game. Each player gets mirrored answer buttons, and the first correct answer pulls the rope toward their side. Wrong answers nudge the rope away.
+Number Tug is a same-device arithmetic tug-of-war game. Players race through arithmetic questions, and the quickest correct answer pulls the rope toward their side. Wrong answers and timeouts nudge the rope away.
 
 ## Ways To Play
 
+- Solo: one player clears ten questions against the rope.
 - Two Players: both players can click/tap their answer side, or share one keyboard.
 - Vs CPU: Player 1 answers while the computer controls Player 2.
 
@@ -11,6 +12,7 @@ Number Tug is a same-device, two-player arithmetic tug-of-war game. Each player 
 
 - Player 1 uses `A`, `S`, `D`, `F` for the four answer buttons on the left.
 - Player 2 uses `J`, `K`, `L`, `;` for the four answer buttons on the right.
+- In Solo mode, Player 1 uses `A`, `S`, `D`, `F`.
 - In Vs CPU mode, Player 1 still uses `A`, `S`, `D`, `F`; the CPU answers automatically.
 
 ## Modes
@@ -32,8 +34,9 @@ Number Tug is a same-device, two-player arithmetic tug-of-war game. Each player 
 - Players can choose their names and face avatars before the match starts.
 - Fast correct answers pull harder.
 - Back-to-back correct answers build a streak bonus.
-- Sound effects can be toggled on or off.
-- Haptics use the browser Vibration API when the device supports it, with visual and sound feedback as the fallback.
+- Sound effects and match music can be toggled separately.
+- The Test button unlocks and checks sound/haptic feedback before a game starts.
+- Haptics use the browser Vibration API when the device supports it. Many desktop browsers and iOS/iPadOS browsers do not expose vibration, so the game falls back to visual and sound feedback.
 
 ## Run Locally
 

@@ -3,10 +3,11 @@ import './App.css'
 
 type Operation = 'add' | 'subtract' | 'multiply' | 'divide' | 'mixed'
 type Difficulty = 'easy' | 'medium' | 'hard'
-type GameMode = 'local' | 'cpu'
+type GameMode = 'solo' | 'local' | 'cpu'
 type PlayerId = 'one' | 'two'
 type Phase = 'setup' | 'playing' | 'gameOver'
 type FeedbackKind = 'correct' | 'wrong' | 'timeout' | 'win'
+type SoundKind = FeedbackKind | 'start' | 'tap' | 'test' | 'music'
 
 type Question = {
   prompt: string
@@ -52,6 +53,7 @@ const difficulties: Array<{ id: Difficulty; label: string }> = [
 ]
 
 const gameModes: Array<{ id: GameMode; label: string }> = [
+  { id: 'solo', label: 'Solo' },
   { id: 'local', label: 'Two Players' },
   { id: 'cpu', label: 'Vs CPU' },
 ]
@@ -63,6 +65,10 @@ const playerKeys: Record<PlayerId, string[]> = {
   two: ['j', 'k', 'l', ';'],
 }
 const cpuProfile: PlayerProfile = { name: 'CPU', face: '🤖' }
+const goalProfile: PlayerProfile = { name: 'Goal', face: '🎯' }
+
+let sharedAudioContext: AudioContext | null = null
+let musicLoop: number | null = null
 
 const settings = {
   easy: { max: 12, multiplyMax: 6, seconds: 18, pull: 16 },
@@ -171,48 +177,96 @@ function triggerHaptic(enabled: boolean, pattern: number | number[]) {
   }
 }
 
-function playSound(enabled: boolean, kind: FeedbackKind | 'start' | 'tap') {
-  if (!enabled || typeof window === 'undefined') return
+function getAudioContext() {
+  if (typeof window === 'undefined') return null
 
   const AudioContextClass =
     window.AudioContext ?? (window as AudioWindow).webkitAudioContext
-  if (!AudioContextClass) return
+  if (!AudioContextClass) return null
 
-  const context = new AudioContextClass()
+  sharedAudioContext ??= new AudioContextClass()
+  return sharedAudioContext
+}
+
+function unlockAudio(enabled: boolean) {
+  if (!enabled) return false
+  const context = getAudioContext()
+  if (!context) return false
+  if (context.state === 'suspended') {
+    void context.resume()
+  }
+  return true
+}
+
+function playSound(enabled: boolean, kind: SoundKind) {
+  if (!unlockAudio(enabled)) return false
+
+  const context = sharedAudioContext
+  if (!context) return false
+
   const gain = context.createGain()
   gain.connect(context.destination)
   gain.gain.setValueAtTime(0.0001, context.currentTime)
-  gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.015)
-  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34)
+  gain.gain.exponentialRampToValueAtTime(
+    kind === 'music' ? 0.045 : 0.28,
+    context.currentTime + 0.015,
+  )
+  gain.gain.exponentialRampToValueAtTime(
+    0.0001,
+    context.currentTime + (kind === 'music' ? 1.4 : 0.42),
+  )
 
-  const patterns: Record<string, number[]> = {
+  const patterns: Record<SoundKind, number[]> = {
     correct: [523, 659, 784],
     wrong: [220, 165],
     timeout: [247, 196],
     win: [523, 659, 784, 1046],
     start: [392, 523],
     tap: [330],
+    test: [392, 523, 659, 784],
+    music: [196, 247, 294, 330, 294, 247],
   }
 
   patterns[kind].forEach((frequency, index) => {
     const oscillator = context.createOscillator()
-    oscillator.type = kind === 'wrong' || kind === 'timeout' ? 'triangle' : 'sine'
+    oscillator.type =
+      kind === 'wrong' || kind === 'timeout'
+        ? 'triangle'
+        : kind === 'music'
+          ? 'sine'
+          : 'square'
     oscillator.frequency.setValueAtTime(
       frequency,
-      context.currentTime + index * 0.075,
+      context.currentTime + index * (kind === 'music' ? 0.18 : 0.075),
     )
     oscillator.connect(gain)
-    oscillator.start(context.currentTime + index * 0.075)
-    oscillator.stop(context.currentTime + index * 0.075 + 0.12)
+    oscillator.start(
+      context.currentTime + index * (kind === 'music' ? 0.18 : 0.075),
+    )
+    oscillator.stop(
+      context.currentTime +
+        index * (kind === 'music' ? 0.18 : 0.075) +
+        (kind === 'music' ? 0.2 : 0.13),
+    )
   })
 
-  window.setTimeout(() => {
-    void context.close()
-  }, 460)
+  return true
+}
+
+function startMusic(enabled: boolean) {
+  if (!enabled || typeof window === 'undefined' || musicLoop !== null) return
+  playSound(true, 'music')
+  musicLoop = window.setInterval(() => playSound(true, 'music'), 2300)
+}
+
+function stopMusic() {
+  if (typeof window === 'undefined' || musicLoop === null) return
+  window.clearInterval(musicLoop)
+  musicLoop = null
 }
 
 function App() {
-  const [gameMode, setGameMode] = useState<GameMode>('local')
+  const [gameMode, setGameMode] = useState<GameMode>('solo')
   const [mode, setMode] = useState<Operation>('add')
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [phase, setPhase] = useState<Phase>('setup')
@@ -227,6 +281,7 @@ function App() {
   const [roundResolved, setRoundResolved] = useState(false)
   const [cpuAttemptedRound, setCpuAttemptedRound] = useState(0)
   const [soundOn, setSoundOn] = useState(true)
+  const [musicOn, setMusicOn] = useState(true)
   const [hapticsOn, setHapticsOn] = useState(true)
   const [impact, setImpact] = useState<FeedbackKind | null>(null)
   const [burst, setBurst] = useState<Burst | null>(null)
@@ -239,17 +294,23 @@ function App() {
     (player: PlayerId) =>
       gameMode === 'cpu' && player === 'two'
         ? cpuProfile.name
+        : gameMode === 'solo' && player === 'two'
+          ? goalProfile.name
         : profiles[player].name.trim() || defaultName(player),
     [gameMode, profiles],
   )
 
   const winner = useMemo(() => {
+    if (gameMode === 'solo') {
+      if (pull <= -ropeLimit) return `${getDisplayName('one')} cleared Solo Run`
+      return `Solo complete: ${scores.one}/${totalRounds} correct`
+    }
     if (pull <= -ropeLimit) return `${getDisplayName('one')} wins by rope pull`
     if (pull >= ropeLimit) return `${getDisplayName('two')} wins by rope pull`
     if (scores.one > scores.two) return `${getDisplayName('one')} wins by score`
     if (scores.two > scores.one) return `${getDisplayName('two')} wins by score`
     return 'Tie game'
-  }, [getDisplayName, pull, scores])
+  }, [gameMode, getDisplayName, pull, scores])
 
   const makeImpact = useCallback(
     (kind: FeedbackKind) => {
@@ -273,6 +334,9 @@ function App() {
       if (message) {
         setFeedback({ kind: 'timeout', text: message })
         setStreaks({ one: 0, two: 0 })
+        if (gameMode === 'solo') {
+          setPull((current) => clampPull(current + 8))
+        }
         makeImpact('timeout')
       }
 
@@ -290,7 +354,7 @@ function App() {
         return currentRound + 1
       })
     },
-    [difficulty, makeImpact, mode],
+    [difficulty, gameMode, makeImpact, mode],
   )
 
   useEffect(() => {
@@ -306,6 +370,16 @@ function App() {
 
     return () => window.clearInterval(timer)
   }, [advanceRound, difficulty, phase])
+
+  useEffect(() => {
+    if (phase === 'playing' && soundOn && musicOn) {
+      startMusic(true)
+    } else {
+      stopMusic()
+    }
+
+    return () => stopMusic()
+  }, [musicOn, phase, soundOn])
 
   useEffect(() => {
     if (phase === 'setup') {
@@ -325,6 +399,7 @@ function App() {
   }
 
   function startGame() {
+    unlockAudio(soundOn)
     playSound(soundOn, 'start')
     triggerHaptic(hapticsOn, [20, 30, 20])
     setPhase('playing')
@@ -339,6 +414,32 @@ function App() {
     setRoundResolved(false)
     setCpuAttemptedRound(0)
     setBurst(null)
+  }
+
+  function testGameFeel() {
+    const audioReady = playSound(soundOn, 'test')
+    const hapticsReady =
+      hapticsOn &&
+      typeof navigator !== 'undefined' &&
+      'vibrate' in navigator &&
+      typeof navigator.vibrate === 'function'
+
+    triggerHaptic(hapticsOn, [30, 40, 30])
+    const audioStatus = audioReady
+      ? 'Sound test played.'
+      : soundOn
+        ? 'Sound is blocked or unavailable; tap Test again or press Start.'
+        : 'Sound is turned off.'
+    const hapticStatus = hapticsOn
+      ? hapticsReady
+        ? 'Haptics requested.'
+        : 'Haptics are not supported on this device/browser.'
+      : 'Haptics are turned off.'
+
+    setFeedback({
+      kind: audioReady ? 'correct' : 'wrong',
+      text: `${audioStatus} ${hapticStatus}`,
+    })
   }
 
   const answerQuestion = useCallback(
@@ -490,11 +591,26 @@ function App() {
 
   const markerPosition = `${50 + pull / 2}%`
   const canChangeSettings = phase !== 'playing'
-  const playerTwoProfile = gameMode === 'cpu' ? cpuProfile : profiles.two
-  const keyHint =
+  const playerTwoProfile =
     gameMode === 'cpu'
+      ? cpuProfile
+      : gameMode === 'solo'
+        ? goalProfile
+        : profiles.two
+  const playerTwoSetupLabel =
+    gameMode === 'cpu' ? 'CPU' : gameMode === 'solo' ? 'Goal' : defaultName('two')
+  const keyHint =
+    gameMode === 'solo'
+      ? 'Solo keys: use A S D F or tap the left answers.'
+      : gameMode === 'cpu'
       ? 'Computer keys: Player 1 uses A S D F. CPU answers automatically.'
       : 'Computer keys: Player 1 uses A S D F. Player 2 uses J K L ;.'
+  const waitingHint =
+    gameMode === 'solo'
+      ? 'Tap the answer before the rope slips.'
+      : gameMode === 'cpu'
+        ? 'Beat the CPU to the answer.'
+        : 'Tap the answer before your opponent.'
   const boardClassName = `game-board${impact ? ` impact-${impact}` : ''}`
 
   return (
@@ -525,7 +641,7 @@ function App() {
             <div>
               <span>Score</span>
               <strong>
-                {scores.one} - {scores.two}
+                {gameMode === 'solo' ? scores.one : `${scores.one} - ${scores.two}`}
               </strong>
             </div>
           </div>
@@ -534,9 +650,19 @@ function App() {
             <ToggleButton active={soundOn} onToggle={setSoundOn}>
               Sound
             </ToggleButton>
+            <ToggleButton active={musicOn} onToggle={setMusicOn}>
+              Music
+            </ToggleButton>
             <ToggleButton active={hapticsOn} onToggle={setHapticsOn}>
               Haptics
             </ToggleButton>
+            <button
+              className="toggle-button test-button"
+              type="button"
+              onClick={testGameFeel}
+            >
+              Test
+            </button>
           </div>
         </header>
 
@@ -588,27 +714,31 @@ function App() {
             >
               {phase === 'gameOver'
                 ? winner
-                : feedback?.text ?? 'Tap the answer before your opponent.'}
+                : feedback?.text ?? waitingHint}
             </div>
             <p className="key-hint">{keyHint}</p>
           </div>
 
-          <PlayerPanel
-            accent="coral"
-            choices={question.choices}
-            disabled={roundResolved || phase !== 'playing' || gameMode === 'cpu'}
-            isCpu={gameMode === 'cpu'}
-            keyLabels={
-              gameMode === 'local'
-                ? playerKeys.two.map((key) => key.toUpperCase())
-                : undefined
-            }
-            label={getDisplayName('two')}
-            onAnswer={(choice) => answerQuestion('two', choice)}
-            profile={playerTwoProfile}
-            score={scores.two}
-            streak={streaks.two}
-          />
+          {gameMode === 'solo' ? (
+            <SoloGoalPanel score={scores.one} streak={streaks.one} />
+          ) : (
+            <PlayerPanel
+              accent="coral"
+              choices={question.choices}
+              disabled={roundResolved || phase !== 'playing' || gameMode === 'cpu'}
+              isCpu={gameMode === 'cpu'}
+              keyLabels={
+                gameMode === 'local'
+                  ? playerKeys.two.map((key) => key.toUpperCase())
+                  : undefined
+              }
+              label={getDisplayName('two')}
+              onAnswer={(choice) => answerQuestion('two', choice)}
+              profile={playerTwoProfile}
+              score={scores.two}
+              streak={streaks.two}
+            />
+          )}
         </section>
 
         <footer className="control-dock">
@@ -620,9 +750,12 @@ function App() {
               updateProfile={updateProfile}
             />
             <ProfileEditor
-              disabled={!canChangeSettings || gameMode === 'cpu'}
+              disabled={
+                !canChangeSettings || gameMode === 'cpu' || gameMode === 'solo'
+              }
               player="two"
               profile={playerTwoProfile}
+              title={playerTwoSetupLabel}
               updateProfile={updateProfile}
             />
           </div>
@@ -720,23 +853,61 @@ function PlayerPanel({
   )
 }
 
+function SoloGoalPanel({ score, streak }: { score: number; streak: number }) {
+  return (
+    <section className="player-panel coral solo-goal" aria-label="Solo goal">
+      <div className="player-banner">
+        <span className="avatar" aria-hidden="true">
+          {goalProfile.face}
+        </span>
+        <div>
+          <h2>Solo Run</h2>
+          <p>
+            Score {score}/{totalRounds}
+            {streak > 1 ? ` - Streak ${streak}` : ''}
+          </p>
+        </div>
+      </div>
+
+      <div className="solo-stats">
+        <div>
+          <span>Correct</span>
+          <strong>{score}</strong>
+        </div>
+        <div>
+          <span>Streak</span>
+          <strong>{streak}</strong>
+        </div>
+        <div>
+          <span>Goal</span>
+          <strong>{totalRounds}</strong>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function ProfileEditor({
   disabled,
   player,
   profile,
+  title,
   updateProfile,
 }: {
   disabled: boolean
   player: PlayerId
   profile: PlayerProfile
+  title?: string
   updateProfile: (player: PlayerId, patch: Partial<PlayerProfile>) => void
 }) {
+  const displayTitle = title ?? defaultName(player)
+
   return (
     <section className={`profile-card ${player}`}>
       <label>
-        <span>{defaultName(player)} name</span>
+        <span>{displayTitle} name</span>
         <input
-          aria-label={`${defaultName(player)} name`}
+          aria-label={`${displayTitle} name`}
           disabled={disabled}
           maxLength={14}
           value={profile.name}
@@ -745,20 +916,26 @@ function ProfileEditor({
           }
         />
       </label>
-      <div className="face-row" aria-label={`${defaultName(player)} face`}>
-        {faceOptions.map((face) => (
-          <button
-            aria-label={`${defaultName(player)} face ${face}`}
-            aria-pressed={profile.face === face}
-            className={profile.face === face ? 'selected' : ''}
-            disabled={disabled}
-            key={face}
-            type="button"
-            onClick={() => updateProfile(player, { face })}
-          >
-            {face}
-          </button>
-        ))}
+      <div className="face-row" aria-label={`${displayTitle} face`}>
+        {disabled && !faceOptions.includes(profile.face) ? (
+          <span className="locked-face" aria-hidden="true">
+            {profile.face}
+          </span>
+        ) : (
+          faceOptions.map((face) => (
+            <button
+              aria-label={`${displayTitle} face ${face}`}
+              aria-pressed={profile.face === face}
+              className={profile.face === face ? 'selected' : ''}
+              disabled={disabled}
+              key={face}
+              type="button"
+              onClick={() => updateProfile(player, { face })}
+            >
+              {face}
+            </button>
+          ))
+        )}
       </div>
     </section>
   )
