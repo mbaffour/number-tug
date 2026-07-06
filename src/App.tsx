@@ -82,6 +82,38 @@ const settings = {
 const totalRounds = 10
 const ropeLimit = 100
 
+type Records = {
+  soloBest: number
+  bestStreak: number
+}
+
+const emptyRecords: Records = { soloBest: 0, bestStreak: 0 }
+const recordsStorageKey = 'number-tug:records'
+
+function loadRecords(): Records {
+  if (typeof window === 'undefined') return emptyRecords
+  try {
+    const raw = window.localStorage.getItem(recordsStorageKey)
+    if (!raw) return emptyRecords
+    const parsed = JSON.parse(raw) as Partial<Records>
+    return {
+      soloBest: Number(parsed.soloBest) || 0,
+      bestStreak: Number(parsed.bestStreak) || 0,
+    }
+  } catch {
+    return emptyRecords
+  }
+}
+
+function saveRecords(records: Records) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(recordsStorageKey, JSON.stringify(records))
+  } catch {
+    // ignore storage failures (private mode, quota)
+  }
+}
+
 function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
@@ -265,6 +297,14 @@ function stopMusic() {
   musicLoop = null
 }
 
+function closeAudio() {
+  stopMusic()
+  if (sharedAudioContext && sharedAudioContext.state !== 'closed') {
+    void sharedAudioContext.close()
+  }
+  sharedAudioContext = null
+}
+
 function App() {
   const [gameMode, setGameMode] = useState<GameMode>('solo')
   const [mode, setMode] = useState<Operation>('add')
@@ -289,6 +329,8 @@ function App() {
     one: { name: 'Player 1', face: '😄' },
     two: { name: 'Player 2', face: '😎' },
   })
+  const [records, setRecords] = useState<Records>(loadRecords)
+  const [peakStreak, setPeakStreak] = useState(0)
 
   const getDisplayName = useCallback(
     (player: PlayerId) =>
@@ -388,6 +430,34 @@ function App() {
     }
   }, [difficulty, mode, phase])
 
+  useEffect(() => closeAudio, [])
+
+  useEffect(() => {
+    if (phase !== 'gameOver') return
+    setRecords((current) => {
+      const next: Records = {
+        soloBest:
+          gameMode === 'solo'
+            ? Math.max(current.soloBest, scores.one)
+            : current.soloBest,
+        bestStreak: Math.max(current.bestStreak, peakStreak),
+      }
+      if (
+        next.soloBest === current.soloBest &&
+        next.bestStreak === current.bestStreak
+      ) {
+        return current
+      }
+      saveRecords(next)
+      return next
+    })
+  }, [gameMode, peakStreak, phase, scores.one])
+
+  function resetRecords() {
+    setRecords(emptyRecords)
+    saveRecords(emptyRecords)
+  }
+
   function updateProfile(player: PlayerId, patch: Partial<PlayerProfile>) {
     setProfiles((current) => ({
       ...current,
@@ -414,6 +484,7 @@ function App() {
     setRoundResolved(false)
     setCpuAttemptedRound(0)
     setBurst(null)
+    setPeakStreak(0)
   }
 
   function testGameFeel() {
@@ -483,6 +554,7 @@ function App() {
         ...current,
         [player]: nextStreak,
       }))
+      setPeakStreak((current) => Math.max(current, nextStreak))
       setPull((current) => {
         const nextPull = clampPull(current + direction * gain)
         if (Math.abs(nextPull) >= ropeLimit) {
@@ -584,7 +656,8 @@ function App() {
     difficulty,
     gameMode,
     phase,
-    question,
+    question.answer,
+    question.choices,
     round,
     roundResolved,
   ])
@@ -760,6 +833,12 @@ function App() {
             />
           </div>
 
+          <Scoreboard
+            records={records}
+            onReset={resetRecords}
+            resetDisabled={records.soloBest === 0 && records.bestStreak === 0}
+          />
+
           <SegmentedControl
             disabled={!canChangeSettings}
             label="Game"
@@ -881,6 +960,44 @@ function SoloGoalPanel({ score, streak }: { score: number; streak: number }) {
         <div>
           <span>Goal</span>
           <strong>{totalRounds}</strong>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Scoreboard({
+  records,
+  onReset,
+  resetDisabled,
+}: {
+  records: Records
+  onReset: () => void
+  resetDisabled: boolean
+}) {
+  return (
+    <section className="scoreboard" aria-label="Personal bests">
+      <div className="scoreboard-head">
+        <span>Best</span>
+        <button
+          className="toggle-button"
+          disabled={resetDisabled}
+          type="button"
+          onClick={onReset}
+        >
+          Reset
+        </button>
+      </div>
+      <div className="scoreboard-stats">
+        <div>
+          <span>Solo</span>
+          <strong>
+            {records.soloBest}/{totalRounds}
+          </strong>
+        </div>
+        <div>
+          <span>Streak</span>
+          <strong>{records.bestStreak}</strong>
         </div>
       </div>
     </section>
