@@ -319,6 +319,8 @@ function App() {
   const [questionStartedAt, setQuestionStartedAt] = useState(Date.now())
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [roundResolved, setRoundResolved] = useState(false)
+  const [wrongChoice, setWrongChoice] = useState<number | null>(null)
+  const [revealedAnswer, setRevealedAnswer] = useState<number | null>(null)
   const [cpuAttemptedRound, setCpuAttemptedRound] = useState(0)
   const [soundOn, setSoundOn] = useState(true)
   const [musicOn, setMusicOn] = useState(true)
@@ -374,12 +376,16 @@ function App() {
   const advanceRound = useCallback(
     (message?: string) => {
       if (message) {
-        setFeedback({ kind: 'timeout', text: message })
+        setFeedback({ kind: 'timeout', text: `${message} Answer: ${question.answer}` })
         setStreaks({ one: 0, two: 0 })
+        setRevealedAnswer(question.answer)
+        setRoundResolved(true)
         if (gameMode === 'solo') {
           setPull((current) => clampPull(current + 8))
         }
         makeImpact('timeout')
+        window.setTimeout(() => advanceRound(), 700)
+        return
       }
 
       setRound((currentRound) => {
@@ -393,14 +399,16 @@ function App() {
         setSecondsLeft(settings[difficulty].seconds)
         setQuestionStartedAt(Date.now())
         setRoundResolved(false)
+        setWrongChoice(null)
+        setRevealedAnswer(null)
         return currentRound + 1
       })
     },
-    [difficulty, gameMode, makeImpact, mode],
+    [difficulty, gameMode, makeImpact, mode, question.answer],
   )
 
   useEffect(() => {
-    if (phase !== 'playing') return
+    if (phase !== 'playing' || roundResolved) return
 
     const timer = window.setInterval(() => {
       setSecondsLeft((current) => {
@@ -411,7 +419,7 @@ function App() {
     }, 1000)
 
     return () => window.clearInterval(timer)
-  }, [advanceRound, difficulty, phase])
+  }, [advanceRound, difficulty, phase, roundResolved])
 
   useEffect(() => {
     if (phase === 'playing' && soundOn && musicOn) {
@@ -482,6 +490,8 @@ function App() {
     setQuestionStartedAt(Date.now())
     setFeedback(null)
     setRoundResolved(false)
+    setWrongChoice(null)
+    setRevealedAnswer(null)
     setCpuAttemptedRound(0)
     setBurst(null)
     setPeakStreak(0)
@@ -523,16 +533,19 @@ function App() {
       if (choice !== question.answer) {
         setPull((current) => clampPull(current - direction * 5))
         setStreaks((current) => ({ ...current, [player]: 0 }))
+        setWrongChoice(choice)
         setFeedback({
           player,
           kind: 'wrong',
-          text: `${getDisplayName(player)} guessed ${choice}`,
+          text: `${getDisplayName(player)} missed -5 pull. Try again.`,
         })
         makeImpact('wrong')
+        window.setTimeout(() => setWrongChoice(null), 360)
         return
       }
 
       setRoundResolved(true)
+      setRevealedAnswer(question.answer)
       const elapsed = (Date.now() - questionStartedAt) / 1000
       const nextStreak = streaks[player] + 1
       const speedBonus = Math.max(
@@ -663,6 +676,8 @@ function App() {
   ])
 
   const markerPosition = `${50 + pull / 2}%`
+  const roundSeconds = settings[difficulty].seconds
+  const timerProgress = Math.max(0, Math.min(100, (secondsLeft / roundSeconds) * 100))
   const canChangeSettings = phase !== 'playing'
   const playerTwoProfile =
     gameMode === 'cpu'
@@ -710,6 +725,9 @@ function App() {
             <div className="timer">
               <span>Time</span>
               <strong>{secondsLeft}s</strong>
+              <i aria-hidden="true" className="timer-meter">
+                <i style={{ width: `${timerProgress}%` }}></i>
+              </i>
             </div>
             <div>
               <span>Score</span>
@@ -750,6 +768,8 @@ function App() {
             profile={profiles.one}
             score={scores.one}
             streak={streaks.one}
+            wrongChoice={wrongChoice}
+            revealedAnswer={revealedAnswer}
           />
 
           <div className="center-stage">
@@ -810,6 +830,8 @@ function App() {
               profile={playerTwoProfile}
               score={scores.two}
               streak={streaks.two}
+              wrongChoice={wrongChoice}
+              revealedAnswer={revealedAnswer}
             />
           )}
         </section>
@@ -880,6 +902,8 @@ function PlayerPanel({
   profile,
   score,
   streak,
+  wrongChoice,
+  revealedAnswer,
 }: {
   accent: 'teal' | 'coral'
   choices: number[]
@@ -891,6 +915,8 @@ function PlayerPanel({
   profile: PlayerProfile
   score: number
   streak: number
+  wrongChoice: number | null
+  revealedAnswer: number | null
 }) {
   return (
     <section
@@ -914,6 +940,8 @@ function PlayerPanel({
       <div className="answer-grid">
         {choices.map((choice, index) => (
           <button
+            aria-label={`${label} answer ${choice}`}
+            className={`${wrongChoice === choice ? 'answer-wrong' : ''}${revealedAnswer === choice ? ' answer-revealed' : ''}`}
             disabled={disabled}
             key={choice}
             type="button"
