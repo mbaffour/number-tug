@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
+
+const assetBase = import.meta.env.BASE_URL
 
 type Operation = 'add' | 'subtract' | 'multiply' | 'divide' | 'mixed'
 type Difficulty = 'easy' | 'medium' | 'hard'
@@ -719,7 +721,15 @@ function App() {
 
   return (
     <main className="game-shell">
-      <section className={boardClassName} aria-label="Number Tug game board">
+      <section
+        className={boardClassName}
+        aria-label="Number Tug game board"
+        style={
+          {
+            '--arena-image': `url(${assetBase}assets/number-tug-arena.png)`,
+          } as CSSProperties
+        }
+      >
         <header className="topbar">
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">
@@ -917,7 +927,7 @@ function TugTrack({
       <img
         alt="Two competitors pulling a rope"
         className="tug-competitors"
-        src="/assets/tug-competitors.png"
+        src={`${assetBase}assets/tug-competitors.png`}
         style={{ transform: `translateX(${pull / 12}px)` }}
       />
       <div className="track">
@@ -951,7 +961,10 @@ function RaceTrack({
         <div
           aria-label={`${playerOne.name} is racing`}
           className="race-runner runner-one"
-          style={{ left: `${50 - pull / 2}%` }}
+          style={{
+            left: `${50 - pull / 2}%`,
+            backgroundImage: `url(${assetBase}assets/race-runners.png)`,
+          }}
         ></div>
       </div>
       <div className="race-lane lane-two">
@@ -959,7 +972,10 @@ function RaceTrack({
         <div
           aria-label={`${playerTwo.name} is racing`}
           className="race-runner runner-two"
-          style={{ left: `${50 + pull / 2}%` }}
+          style={{
+            left: `${50 + pull / 2}%`,
+            backgroundImage: `url(${assetBase}assets/race-runners.png)`,
+          }}
         ></div>
       </div>
       <MathBurst burst={burst} />

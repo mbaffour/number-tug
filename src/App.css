@@ -15,7 +15,7 @@
   border-radius: 24px;
   background:
     linear-gradient(180deg, rgba(255, 250, 236, 0.2), rgba(255, 250, 236, 0.92)),
-    url('/assets/number-tug-arena.png') center / cover no-repeat;
+    var(--arena-image) center / cover no-repeat;
   box-shadow:
     0 24px 60px rgba(16, 29, 52, 0.22),
     inset 0 0 0 1px rgba(255, 255, 255, 0.65);
@@ -445,7 +445,6 @@
   width: 120px;
   height: 132px;
   translate: -50% 0;
-  background-image: url('/assets/race-runners.png');
   background-repeat: no-repeat;
   background-size: 340px auto;
   transition: left 260ms cubic-bezier(0.16, 1, 0.3, 1);
