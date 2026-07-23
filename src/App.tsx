@@ -61,7 +61,7 @@ const gameModes: Array<{ id: GameMode; label: string }> = [
 
 const arenaThemes: Array<{ id: ArenaTheme; label: string }> = [
   { id: 'tug', label: 'Tug' },
-  { id: 'race', label: 'Car Race' },
+  { id: 'race', label: 'Sprint Race' },
 ]
 
 const faceOptions = ['😄', '😎', '🤓', '🥳', '🙂', '😃', '🤠', '😇']
@@ -713,7 +713,7 @@ function App() {
           ? 'Outrun the CPU to the finish line.'
           : 'Beat the CPU to the answer.'
         : arenaTheme === 'race'
-          ? 'First correct answer gets the turbo boost.'
+          ? 'First correct answer gets a sprint boost.'
           : 'Tap the answer before your opponent.'
   const boardClassName = `game-board ${arenaTheme}-theme${impact ? ` impact-${impact}` : ''}`
 
@@ -913,7 +913,13 @@ function TugTrack({
 }) {
   return (
     <div className="rope-wrap" aria-label="Tug of war progress">
-      <div className="rope"></div>
+      <div className="tug-ground" aria-hidden="true"></div>
+      <img
+        alt="Two competitors pulling a rope"
+        className="tug-competitors"
+        src="/assets/tug-competitors.png"
+        style={{ transform: `translateX(${pull / 12}px)` }}
+      />
       <div className="track">
         <span className="track-fill one"></span>
         <span className="track-fill two"></span>
@@ -942,15 +948,19 @@ function RaceTrack({
       <span className="finish-line" aria-hidden="true"></span>
       <div className="race-lane lane-one">
         <span className="lane-label">P1</span>
-        <div className="race-car teal-car" style={{ left: `${50 - pull / 2}%` }}>
-          <span>{playerOne.face}</span>
-        </div>
+        <div
+          aria-label={`${playerOne.name} is racing`}
+          className="race-runner runner-one"
+          style={{ left: `${50 - pull / 2}%` }}
+        ></div>
       </div>
       <div className="race-lane lane-two">
         <span className="lane-label">P2</span>
-        <div className="race-car coral-car" style={{ left: `${50 + pull / 2}%` }}>
-          <span>{playerTwo.face}</span>
-        </div>
+        <div
+          aria-label={`${playerTwo.name} is racing`}
+          className="race-runner runner-two"
+          style={{ left: `${50 + pull / 2}%` }}
+        ></div>
       </div>
       <MathBurst burst={burst} />
     </div>

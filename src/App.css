@@ -356,14 +356,41 @@
 
 .rope-wrap {
   position: relative;
-  min-height: 180px;
+  min-height: 286px;
   display: grid;
   align-items: center;
+  overflow: hidden;
+  border: 4px solid #102743;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #9fdcf1 0 63%, #7abe61 63% 100%);
+  box-shadow: 0 8px 0 rgba(16, 29, 52, 0.22);
+}
+
+.tug-ground {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 34%;
+  background: repeating-linear-gradient(135deg, rgba(31, 100, 52, 0.18) 0 10px, transparent 10px 24px);
+}
+
+.tug-competitors {
+  position: absolute;
+  z-index: 2;
+  bottom: -8px;
+  left: 50%;
+  width: min(96%, 520px);
+  max-width: none;
+  height: auto;
+  translate: -50% 0;
+  transform-origin: center bottom;
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .race-track {
   position: relative;
-  min-height: 180px;
+  min-height: 266px;
   padding: 16px 18px 16px 42px;
   overflow: hidden;
   border: 4px solid #102743;
@@ -383,7 +410,7 @@
 .race-lane {
   position: relative;
   z-index: 1;
-  height: 68px;
+  height: 110px;
   border: 2px solid rgba(255, 255, 255, 0.28);
 }
 
@@ -412,46 +439,34 @@
   background: conic-gradient(#102743 25%, #fffdf4 0 50%, #102743 0 75%, #fffdf4 0) 0 / 10px 10px;
 }
 
-.race-car {
+.race-runner {
   position: absolute;
-  top: 10px;
-  width: 68px;
-  height: 40px;
-  display: grid;
-  place-items: center;
+  top: -10px;
+  width: 120px;
+  height: 132px;
   translate: -50% 0;
-  border: 3px solid #102743;
-  border-radius: 20px 22px 11px 11px;
-  box-shadow: 0 5px 0 #102743;
+  background-image: url('/assets/race-runners.png');
+  background-repeat: no-repeat;
+  background-size: 340px auto;
   transition: left 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.race-car::before,
-.race-car::after {
-  content: '';
-  position: absolute;
-  bottom: -9px;
-  width: 14px;
-  height: 14px;
-  border: 3px solid #102743;
-  border-radius: 50%;
-  background: #f7efdc;
-}
+.runner-one { background-position: -25px -4px; }
+.runner-two { background-position: -202px -4px; }
 
-.race-car::before { left: 7px; }
-.race-car::after { right: 7px; }
-.race-car span { font-size: 24px; }
-.teal-car { background: #17b8b1; }
-.coral-car { background: #ff705e; }
-
-.impact-correct.race-theme .race-car,
-.impact-win.race-theme .race-car {
+.impact-correct.race-theme .race-runner,
+.impact-win.race-theme .race-runner {
   animation: turbo-hop 420ms ease both;
 }
 
 .impact-correct .rope-wrap,
 .impact-win .rope-wrap {
   animation: happy-pop 420ms ease both;
+}
+
+.impact-correct .tug-competitors,
+.impact-win .tug-competitors {
+  animation: tug-heave 420ms ease both;
 }
 
 .impact-wrong .question-card,
@@ -479,7 +494,8 @@
   position: absolute;
   left: 8%;
   right: 8%;
-  bottom: 18px;
+  z-index: 4;
+  bottom: 9px;
   height: 35px;
   overflow: hidden;
   border: 4px solid #102743;
@@ -500,7 +516,8 @@
 
 .marker {
   position: absolute;
-  top: 18px;
+  z-index: 5;
+  top: 12px;
   width: 78px;
   height: 92px;
   display: grid;
@@ -987,11 +1004,11 @@
   }
 
   .rope-wrap {
-    min-height: 154px;
+    min-height: 250px;
   }
 
   .race-track {
-    min-height: 154px;
+    min-height: 236px;
   }
 
   .control-dock {
@@ -1144,6 +1161,10 @@
 
 @keyframes turbo-hop {
   45% { transform: translateY(-9px) rotate(-2deg); }
+}
+
+@keyframes tug-heave {
+  45% { transform: translateX(-8px) scale(1.025); }
 }
 
 @keyframes shake-card {
