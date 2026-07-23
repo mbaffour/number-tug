@@ -453,8 +453,36 @@
 .runner-one { background-position: -25px -4px; }
 .runner-two { background-position: -202px -4px; }
 
+.race-car {
+  position: absolute;
+  top: 10px;
+  width: 124px;
+  height: 90px;
+  translate: -50% 0;
+  background-repeat: no-repeat;
+  background-size: 350px auto;
+  transition: left 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.race-car-one { background-position: -15px -48px; }
+.race-car-two { background-position: -211px -48px; }
+
+.car-track {
+  background: #252c38;
+}
+
+.car-track::before {
+  opacity: 0.55;
+  background: repeating-linear-gradient(0deg, transparent 0 46px, #fbc949 46px 53px, transparent 53px 116px);
+}
+
 .impact-correct.race-theme .race-runner,
 .impact-win.race-theme .race-runner {
+  animation: turbo-hop 420ms ease both;
+}
+
+.impact-correct.car-theme .race-car,
+.impact-win.car-theme .race-car {
   animation: turbo-hop 420ms ease both;
 }
 

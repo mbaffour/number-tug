@@ -6,7 +6,7 @@ const assetBase = import.meta.env.BASE_URL
 type Operation = 'add' | 'subtract' | 'multiply' | 'divide' | 'mixed'
 type Difficulty = 'easy' | 'medium' | 'hard'
 type GameMode = 'solo' | 'local' | 'cpu'
-type ArenaTheme = 'tug' | 'race'
+type ArenaTheme = 'tug' | 'race' | 'car'
 type PlayerId = 'one' | 'two'
 type Phase = 'setup' | 'playing' | 'gameOver'
 type FeedbackKind = 'correct' | 'wrong' | 'timeout' | 'win'
@@ -64,6 +64,7 @@ const gameModes: Array<{ id: GameMode; label: string }> = [
 const arenaThemes: Array<{ id: ArenaTheme; label: string }> = [
   { id: 'tug', label: 'Tug' },
   { id: 'race', label: 'Sprint Race' },
+  { id: 'car', label: 'Car Race' },
 ]
 
 const faceOptions = ['😄', '😎', '🤓', '🥳', '🙂', '😃', '🤠', '😇']
@@ -371,7 +372,12 @@ function App() {
   const makeImpact = useCallback(
     (kind: FeedbackKind) => {
       setImpact(kind)
-      playSound(soundOn, kind === 'correct' && arenaTheme === 'race' ? 'boost' : kind)
+      playSound(
+        soundOn,
+        kind === 'correct' && (arenaTheme === 'race' || arenaTheme === 'car')
+          ? 'boost'
+          : kind,
+      )
       triggerHaptic(
         hapticsOn,
         kind === 'correct' || kind === 'win'
@@ -707,16 +713,20 @@ function App() {
       : 'Computer keys: Player 1 uses A S D F. Player 2 uses J K L ;.'
   const waitingHint =
     gameMode === 'solo'
-      ? arenaTheme === 'race'
-        ? 'Answer quickly to keep your car ahead.'
-        : 'Tap the answer before the rope slips.'
+      ? arenaTheme === 'tug'
+        ? 'Tap the answer before the rope slips.'
+        : arenaTheme === 'car'
+          ? 'Answer quickly to keep your car ahead.'
+          : 'Answer quickly to keep your runner ahead.'
       : gameMode === 'cpu'
-        ? arenaTheme === 'race'
-          ? 'Outrun the CPU to the finish line.'
-          : 'Beat the CPU to the answer.'
-        : arenaTheme === 'race'
-          ? 'First correct answer gets a sprint boost.'
-          : 'Tap the answer before your opponent.'
+        ? arenaTheme === 'tug'
+          ? 'Beat the CPU to the answer.'
+          : 'Outrun the CPU to the finish line.'
+        : arenaTheme === 'tug'
+          ? 'Tap the answer before your opponent.'
+          : arenaTheme === 'car'
+            ? 'First correct answer gets a turbo boost.'
+            : 'First correct answer gets a sprint boost.'
   const boardClassName = `game-board ${arenaTheme}-theme${impact ? ` impact-${impact}` : ''}`
 
   return (
@@ -799,15 +809,16 @@ function App() {
           />
 
           <div className="center-stage">
-            {arenaTheme === 'race' ? (
+            {arenaTheme === 'tug' ? (
+              <TugTrack burst={burst} markerPosition={markerPosition} pull={pull} />
+            ) : (
               <RaceTrack
                 burst={burst}
+                vehicle={arenaTheme === 'car' ? 'car' : 'runner'}
                 pull={pull}
                 playerOne={profiles.one}
                 playerTwo={playerTwoProfile}
               />
-            ) : (
-              <TugTrack burst={burst} markerPosition={markerPosition} pull={pull} />
             )}
 
             <div className="question-card">
@@ -947,23 +958,29 @@ function RaceTrack({
   pull,
   playerOne,
   playerTwo,
+  vehicle,
 }: {
   burst: Burst | null
   pull: number
   playerOne: PlayerProfile
   playerTwo: PlayerProfile
+  vehicle: 'runner' | 'car'
 }) {
+  const assetName = vehicle === 'car' ? 'race-cars.png' : 'race-runners.png'
+  const vehicleClass = vehicle === 'car' ? 'race-car' : 'race-runner'
+  const ariaLabel = vehicle === 'car' ? 'Car race progress' : 'Sprint race progress'
+
   return (
-    <div className="race-track" aria-label="Car race progress">
+    <div className={`race-track ${vehicle === 'car' ? 'car-track' : ''}`} aria-label={ariaLabel}>
       <span className="finish-line" aria-hidden="true"></span>
       <div className="race-lane lane-one">
         <span className="lane-label">P1</span>
         <div
           aria-label={`${playerOne.name} is racing`}
-          className="race-runner runner-one"
+          className={`${vehicleClass} ${vehicleClass}-one`}
           style={{
             left: `${50 - pull / 2}%`,
-            backgroundImage: `url(${assetBase}assets/race-runners.png)`,
+            backgroundImage: `url(${assetBase}assets/${assetName})`,
           }}
         ></div>
       </div>
@@ -971,10 +988,10 @@ function RaceTrack({
         <span className="lane-label">P2</span>
         <div
           aria-label={`${playerTwo.name} is racing`}
-          className="race-runner runner-two"
+          className={`${vehicleClass} ${vehicleClass}-two`}
           style={{
             left: `${50 + pull / 2}%`,
-            backgroundImage: `url(${assetBase}assets/race-runners.png)`,
+            backgroundImage: `url(${assetBase}assets/${assetName})`,
           }}
         ></div>
       </div>
