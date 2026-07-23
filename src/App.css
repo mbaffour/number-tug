@@ -361,6 +361,94 @@
   align-items: center;
 }
 
+.race-track {
+  position: relative;
+  min-height: 180px;
+  padding: 16px 18px 16px 42px;
+  overflow: hidden;
+  border: 4px solid #102743;
+  border-radius: 22px;
+  background: #313b4b;
+  box-shadow: 0 8px 0 rgba(16, 29, 52, 0.22);
+}
+
+.race-track::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.34;
+  background: repeating-linear-gradient(0deg, transparent 0 32px, #f7efdc 32px 40px, transparent 40px 74px);
+}
+
+.race-lane {
+  position: relative;
+  z-index: 1;
+  height: 68px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+}
+
+.lane-two {
+  margin-top: 12px;
+}
+
+.lane-label {
+  position: absolute;
+  left: -34px;
+  top: 50%;
+  translate: 0 -50%;
+  color: #fffdf4;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.finish-line {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 20px;
+  bottom: 10px;
+  width: 20px;
+  border: 2px solid #fffdf4;
+  background: conic-gradient(#102743 25%, #fffdf4 0 50%, #102743 0 75%, #fffdf4 0) 0 / 10px 10px;
+}
+
+.race-car {
+  position: absolute;
+  top: 10px;
+  width: 68px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  translate: -50% 0;
+  border: 3px solid #102743;
+  border-radius: 20px 22px 11px 11px;
+  box-shadow: 0 5px 0 #102743;
+  transition: left 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.race-car::before,
+.race-car::after {
+  content: '';
+  position: absolute;
+  bottom: -9px;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #102743;
+  border-radius: 50%;
+  background: #f7efdc;
+}
+
+.race-car::before { left: 7px; }
+.race-car::after { right: 7px; }
+.race-car span { font-size: 24px; }
+.teal-car { background: #17b8b1; }
+.coral-car { background: #ff705e; }
+
+.impact-correct.race-theme .race-car,
+.impact-win.race-theme .race-car {
+  animation: turbo-hop 420ms ease both;
+}
+
 .impact-correct .rope-wrap,
 .impact-win .rope-wrap {
   animation: happy-pop 420ms ease both;
@@ -902,6 +990,10 @@
     min-height: 154px;
   }
 
+  .race-track {
+    min-height: 154px;
+  }
+
   .control-dock {
     align-items: stretch;
   }
@@ -1048,6 +1140,10 @@
   100% {
     transform: scale(1);
   }
+}
+
+@keyframes turbo-hop {
+  45% { transform: translateY(-9px) rotate(-2deg); }
 }
 
 @keyframes shake-card {

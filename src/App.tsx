@@ -4,10 +4,11 @@ import './App.css'
 type Operation = 'add' | 'subtract' | 'multiply' | 'divide' | 'mixed'
 type Difficulty = 'easy' | 'medium' | 'hard'
 type GameMode = 'solo' | 'local' | 'cpu'
+type ArenaTheme = 'tug' | 'race'
 type PlayerId = 'one' | 'two'
 type Phase = 'setup' | 'playing' | 'gameOver'
 type FeedbackKind = 'correct' | 'wrong' | 'timeout' | 'win'
-type SoundKind = FeedbackKind | 'start' | 'tap' | 'test' | 'music'
+type SoundKind = FeedbackKind | 'start' | 'tap' | 'test' | 'music' | 'boost'
 
 type Question = {
   prompt: string
@@ -56,6 +57,11 @@ const gameModes: Array<{ id: GameMode; label: string }> = [
   { id: 'solo', label: 'Solo' },
   { id: 'local', label: 'Two Players' },
   { id: 'cpu', label: 'Vs CPU' },
+]
+
+const arenaThemes: Array<{ id: ArenaTheme; label: string }> = [
+  { id: 'tug', label: 'Tug' },
+  { id: 'race', label: 'Car Race' },
 ]
 
 const faceOptions = ['😄', '😎', '🤓', '🥳', '🙂', '😃', '🤠', '😇']
@@ -257,6 +263,7 @@ function playSound(enabled: boolean, kind: SoundKind) {
     tap: [330],
     test: [392, 523, 659, 784],
     music: [196, 247, 294, 330, 294, 247],
+    boost: [165, 220, 330, 440],
   }
 
   patterns[kind].forEach((frequency, index) => {
@@ -264,6 +271,8 @@ function playSound(enabled: boolean, kind: SoundKind) {
     oscillator.type =
       kind === 'wrong' || kind === 'timeout'
         ? 'triangle'
+        : kind === 'boost'
+          ? 'sawtooth'
         : kind === 'music'
           ? 'sine'
           : 'square'
@@ -307,6 +316,7 @@ function closeAudio() {
 
 function App() {
   const [gameMode, setGameMode] = useState<GameMode>('solo')
+  const [arenaTheme, setArenaTheme] = useState<ArenaTheme>('tug')
   const [mode, setMode] = useState<Operation>('add')
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [phase, setPhase] = useState<Phase>('setup')
@@ -359,7 +369,7 @@ function App() {
   const makeImpact = useCallback(
     (kind: FeedbackKind) => {
       setImpact(kind)
-      playSound(soundOn, kind)
+      playSound(soundOn, kind === 'correct' && arenaTheme === 'race' ? 'boost' : kind)
       triggerHaptic(
         hapticsOn,
         kind === 'correct' || kind === 'win'
@@ -370,7 +380,7 @@ function App() {
       )
       window.setTimeout(() => setImpact(null), 420)
     },
-    [hapticsOn, soundOn],
+    [arenaTheme, hapticsOn, soundOn],
   )
 
   const advanceRound = useCallback(
@@ -695,11 +705,17 @@ function App() {
       : 'Computer keys: Player 1 uses A S D F. Player 2 uses J K L ;.'
   const waitingHint =
     gameMode === 'solo'
-      ? 'Tap the answer before the rope slips.'
+      ? arenaTheme === 'race'
+        ? 'Answer quickly to keep your car ahead.'
+        : 'Tap the answer before the rope slips.'
       : gameMode === 'cpu'
-        ? 'Beat the CPU to the answer.'
-        : 'Tap the answer before your opponent.'
-  const boardClassName = `game-board${impact ? ` impact-${impact}` : ''}`
+        ? arenaTheme === 'race'
+          ? 'Outrun the CPU to the finish line.'
+          : 'Beat the CPU to the answer.'
+        : arenaTheme === 'race'
+          ? 'First correct answer gets the turbo boost.'
+          : 'Tap the answer before your opponent.'
+  const boardClassName = `game-board ${arenaTheme}-theme${impact ? ` impact-${impact}` : ''}`
 
   return (
     <main className="game-shell">
@@ -773,28 +789,16 @@ function App() {
           />
 
           <div className="center-stage">
-            <div className="rope-wrap" aria-label="Tug of war progress">
-              <div className="rope"></div>
-              <div className="track">
-                <span className="track-fill one"></span>
-                <span className="track-fill two"></span>
-              </div>
-              <div className="marker" style={{ left: markerPosition }}>
-                <span>{Math.abs(pull)}</span>
-              </div>
-              {burst && (
-                <div
-                  className={`math-burst ${burst.player}`}
-                  key={burst.id}
-                  aria-hidden="true"
-                >
-                  <strong>{burst.text}</strong>
-                  {burstPieces.map((piece, index) => (
-                    <span key={`${piece}-${index}`}>{piece}</span>
-                  ))}
-                </div>
-              )}
-            </div>
+            {arenaTheme === 'race' ? (
+              <RaceTrack
+                burst={burst}
+                pull={pull}
+                playerOne={profiles.one}
+                playerTwo={playerTwoProfile}
+              />
+            ) : (
+              <TugTrack burst={burst} markerPosition={markerPosition} pull={pull} />
+            )}
 
             <div className="question-card">
               <span className="operation-label">{question.operation}</span>
@@ -870,6 +874,13 @@ function App() {
           />
           <SegmentedControl
             disabled={!canChangeSettings}
+            label="Arena"
+            onChange={setArenaTheme}
+            options={arenaThemes}
+            value={arenaTheme}
+          />
+          <SegmentedControl
+            disabled={!canChangeSettings}
             label="Math"
             onChange={setMode}
             options={operations}
@@ -888,6 +899,74 @@ function App() {
         </footer>
       </section>
     </main>
+  )
+}
+
+function TugTrack({
+  burst,
+  markerPosition,
+  pull,
+}: {
+  burst: Burst | null
+  markerPosition: string
+  pull: number
+}) {
+  return (
+    <div className="rope-wrap" aria-label="Tug of war progress">
+      <div className="rope"></div>
+      <div className="track">
+        <span className="track-fill one"></span>
+        <span className="track-fill two"></span>
+      </div>
+      <div className="marker" style={{ left: markerPosition }}>
+        <span>{Math.abs(pull)}</span>
+      </div>
+      <MathBurst burst={burst} />
+    </div>
+  )
+}
+
+function RaceTrack({
+  burst,
+  pull,
+  playerOne,
+  playerTwo,
+}: {
+  burst: Burst | null
+  pull: number
+  playerOne: PlayerProfile
+  playerTwo: PlayerProfile
+}) {
+  return (
+    <div className="race-track" aria-label="Car race progress">
+      <span className="finish-line" aria-hidden="true"></span>
+      <div className="race-lane lane-one">
+        <span className="lane-label">P1</span>
+        <div className="race-car teal-car" style={{ left: `${50 - pull / 2}%` }}>
+          <span>{playerOne.face}</span>
+        </div>
+      </div>
+      <div className="race-lane lane-two">
+        <span className="lane-label">P2</span>
+        <div className="race-car coral-car" style={{ left: `${50 + pull / 2}%` }}>
+          <span>{playerTwo.face}</span>
+        </div>
+      </div>
+      <MathBurst burst={burst} />
+    </div>
+  )
+}
+
+function MathBurst({ burst }: { burst: Burst | null }) {
+  if (!burst) return null
+
+  return (
+    <div className={`math-burst ${burst.player}`} key={burst.id} aria-hidden="true">
+      <strong>{burst.text}</strong>
+      {burstPieces.map((piece, index) => (
+        <span key={`${piece}-${index}`}>{piece}</span>
+      ))}
+    </div>
   )
 }
 
