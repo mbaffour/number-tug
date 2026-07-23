@@ -10,7 +10,15 @@ type ArenaTheme = 'tug' | 'race' | 'car'
 type PlayerId = 'one' | 'two'
 type Phase = 'setup' | 'playing' | 'gameOver'
 type FeedbackKind = 'correct' | 'wrong' | 'timeout' | 'win'
-type SoundKind = FeedbackKind | 'start' | 'tap' | 'test' | 'music' | 'boost'
+type SoundKind =
+  | FeedbackKind
+  | 'start'
+  | 'tap'
+  | 'test'
+  | 'music'
+  | 'boost'
+  | 'cheer'
+  | 'boo'
 
 type Question = {
   prompt: string
@@ -267,6 +275,8 @@ function playSound(enabled: boolean, kind: SoundKind) {
     test: [392, 523, 659, 784],
     music: [196, 247, 294, 330, 294, 247],
     boost: [165, 220, 330, 440],
+    cheer: [392, 523, 659, 784, 1046],
+    boo: [294, 247, 196, 147],
   }
 
   patterns[kind].forEach((frequency, index) => {
@@ -294,6 +304,59 @@ function playSound(enabled: boolean, kind: SoundKind) {
     )
   })
 
+  return true
+}
+
+function playCrowdReaction(enabled: boolean, reaction: 'cheer' | 'boo') {
+  if (!unlockAudio(enabled)) return false
+
+  const context = sharedAudioContext
+  if (!context) return false
+
+  const duration = reaction === 'cheer' ? 0.7 : 0.48
+  const noise = context.createBuffer(1, Math.floor(context.sampleRate * duration), context.sampleRate)
+  const data = noise.getChannelData(0)
+  for (let index = 0; index < data.length; index += 1) {
+    const fade = 1 - index / data.length
+    data[index] = (Math.random() * 2 - 1) * fade
+  }
+
+  const source = context.createBufferSource()
+  const filter = context.createBiquadFilter()
+  const gain = context.createGain()
+  source.buffer = noise
+  filter.type = 'bandpass'
+  filter.frequency.value = reaction === 'cheer' ? 1500 : 360
+  filter.Q.value = 0.7
+  gain.gain.setValueAtTime(0.0001, context.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.03)
+  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration)
+  source.connect(filter)
+  filter.connect(gain)
+  gain.connect(context.destination)
+  source.start()
+  source.stop(context.currentTime + duration)
+  return true
+}
+
+function speakGameCue(enabled: boolean, kind: FeedbackKind | 'start') {
+  if (!enabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return false
+
+  const phrases: Record<FeedbackKind | 'start', string[]> = {
+    correct: ['Great job!', 'Amazing math!', 'You got it!'],
+    wrong: ['Oops, try again!', 'Keep going!', 'Almost!'],
+    timeout: ['Time is up!', 'Next question!'],
+    win: ['You did it!', 'Fantastic finish!'],
+    start: ['Ready, set, math!'],
+  }
+  const utterance = new SpeechSynthesisUtterance(
+    phrases[kind][randomInt(0, phrases[kind].length - 1)],
+  )
+  utterance.rate = kind === 'start' ? 1.05 : 1.18
+  utterance.pitch = 1.25
+  utterance.volume = 0.72
+  window.speechSynthesis.cancel()
+  window.speechSynthesis.speak(utterance)
   return true
 }
 
@@ -337,6 +400,7 @@ function App() {
   const [cpuAttemptedRound, setCpuAttemptedRound] = useState(0)
   const [soundOn, setSoundOn] = useState(true)
   const [musicOn, setMusicOn] = useState(true)
+  const [voiceOn, setVoiceOn] = useState(true)
   const [hapticsOn, setHapticsOn] = useState(true)
   const [impact, setImpact] = useState<FeedbackKind | null>(null)
   const [burst, setBurst] = useState<Burst | null>(null)
@@ -372,12 +436,18 @@ function App() {
   const makeImpact = useCallback(
     (kind: FeedbackKind) => {
       setImpact(kind)
-      playSound(
-        soundOn,
-        kind === 'correct' && (arenaTheme === 'race' || arenaTheme === 'car')
-          ? 'boost'
-          : kind,
-      )
+      const isRace = arenaTheme === 'race' || arenaTheme === 'car'
+      if (kind === 'correct') {
+        playSound(soundOn, isRace ? 'boost' : 'cheer')
+        playCrowdReaction(soundOn, 'cheer')
+      } else if (kind === 'win') {
+        playSound(soundOn, 'win')
+        playCrowdReaction(soundOn, 'cheer')
+      } else {
+        playSound(soundOn, kind === 'timeout' ? 'boo' : kind)
+        playCrowdReaction(soundOn, 'boo')
+      }
+      speakGameCue(voiceOn, kind)
       triggerHaptic(
         hapticsOn,
         kind === 'correct' || kind === 'win'
@@ -388,7 +458,7 @@ function App() {
       )
       window.setTimeout(() => setImpact(null), 420)
     },
-    [arenaTheme, hapticsOn, soundOn],
+    [arenaTheme, hapticsOn, soundOn, voiceOn],
   )
 
   const advanceRound = useCallback(
@@ -450,6 +520,16 @@ function App() {
   }, [musicOn, phase, soundOn])
 
   useEffect(() => {
+    if (
+      !voiceOn &&
+      typeof window !== 'undefined' &&
+      'speechSynthesis' in window
+    ) {
+      window.speechSynthesis.cancel()
+    }
+  }, [voiceOn])
+
+  useEffect(() => {
     if (phase === 'setup') {
       setQuestion(makeQuestion(mode, difficulty))
       setSecondsLeft(settings[difficulty].seconds)
@@ -497,6 +577,7 @@ function App() {
   function startGame() {
     unlockAudio(soundOn)
     playSound(soundOn, 'start')
+    speakGameCue(voiceOn, 'start')
     triggerHaptic(hapticsOn, [20, 30, 20])
     setPhase('playing')
     setRound(1)
@@ -517,6 +598,7 @@ function App() {
 
   function testGameFeel() {
     const audioReady = playSound(soundOn, 'test')
+    const voiceReady = speakGameCue(voiceOn, 'correct')
     const hapticsReady =
       hapticsOn &&
       typeof navigator !== 'undefined' &&
@@ -534,10 +616,15 @@ function App() {
         ? 'Haptics requested.'
         : 'Haptics are not supported on this device/browser.'
       : 'Haptics are turned off.'
+    const voiceStatus = voiceOn
+      ? voiceReady
+        ? 'Voice cue requested.'
+        : 'Voice cues are unavailable in this browser.'
+      : 'Voice cues are turned off.'
 
     setFeedback({
       kind: audioReady ? 'correct' : 'wrong',
-      text: `${audioStatus} ${hapticStatus}`,
+      text: `${audioStatus} ${voiceStatus} ${hapticStatus}`,
     })
   }
 
@@ -779,6 +866,9 @@ function App() {
             </ToggleButton>
             <ToggleButton active={musicOn} onToggle={setMusicOn}>
               Music
+            </ToggleButton>
+            <ToggleButton active={voiceOn} onToggle={setVoiceOn}>
+              Voice
             </ToggleButton>
             <ToggleButton active={hapticsOn} onToggle={setHapticsOn}>
               Haptics
