@@ -5,10 +5,10 @@ const assetBase = import.meta.env.BASE_URL
 
 type Operation = 'add' | 'subtract' | 'multiply' | 'divide' | 'mixed'
 type Difficulty = 'easy' | 'medium' | 'hard'
-type GameMode = 'solo' | 'local' | 'cpu'
+type GameMode = 'solo' | 'local' | 'turns' | 'cpu'
 type ArenaTheme = 'tug' | 'race' | 'car'
 type PlayerId = 'one' | 'two'
-type Phase = 'setup' | 'playing' | 'gameOver'
+type Phase = 'setup' | 'playing' | 'handoff' | 'gameOver'
 type FeedbackKind = 'correct' | 'wrong' | 'timeout' | 'win'
 type SoundKind =
   | FeedbackKind
@@ -66,6 +66,7 @@ const difficulties: Array<{ id: Difficulty; label: string }> = [
 const gameModes: Array<{ id: GameMode; label: string }> = [
   { id: 'solo', label: 'Solo' },
   { id: 'local', label: 'Two Players' },
+  { id: 'turns', label: 'Pass & Play' },
   { id: 'cpu', label: 'Vs CPU' },
 ]
 
@@ -388,6 +389,8 @@ function App() {
   const [phase, setPhase] = useState<Phase>('setup')
   const [round, setRound] = useState(1)
   const [scores, setScores] = useState({ one: 0, two: 0 })
+  const [turnPlayer, setTurnPlayer] = useState<PlayerId>('one')
+  const [turnTimes, setTurnTimes] = useState({ one: 0, two: 0 })
   const [streaks, setStreaks] = useState({ one: 0, two: 0 })
   const [pull, setPull] = useState(0)
   const [question, setQuestion] = useState(() => makeQuestion(mode, difficulty))
@@ -426,12 +429,19 @@ function App() {
       if (pull <= -ropeLimit) return `${getDisplayName('one')} cleared Solo Run`
       return `Solo complete: ${scores.one}/${totalRounds} correct`
     }
+    if (gameMode === 'turns') {
+      if (scores.one > scores.two) return `${getDisplayName('one')} wins with more correct answers`
+      if (scores.two > scores.one) return `${getDisplayName('two')} wins with more correct answers`
+      if (scores.one > 0 && turnTimes.one < turnTimes.two) return `${getDisplayName('one')} wins on speed`
+      if (scores.two > 0 && turnTimes.two < turnTimes.one) return `${getDisplayName('two')} wins on speed`
+      return 'Perfect tie'
+    }
     if (pull <= -ropeLimit) return `${getDisplayName('one')} wins by rope pull`
     if (pull >= ropeLimit) return `${getDisplayName('two')} wins by rope pull`
     if (scores.one > scores.two) return `${getDisplayName('one')} wins by score`
     if (scores.two > scores.one) return `${getDisplayName('two')} wins by score`
     return 'Tie game'
-  }, [gameMode, getDisplayName, pull, scores])
+  }, [gameMode, getDisplayName, pull, scores, turnTimes])
 
   const makeImpact = useCallback(
     (kind: FeedbackKind) => {
@@ -478,6 +488,18 @@ function App() {
 
       setRound((currentRound) => {
         if (currentRound >= totalRounds) {
+          if (gameMode === 'turns' && turnPlayer === 'one') {
+            setTurnPlayer('two')
+            setPhase('handoff')
+            setQuestion(makeQuestion(mode, difficulty))
+            setSecondsLeft(settings[difficulty].seconds)
+            setQuestionStartedAt(Date.now())
+            setRoundResolved(false)
+            setWrongChoice(null)
+            setRevealedAnswer(null)
+            setFeedback(null)
+            return 1
+          }
           setPhase('gameOver')
           makeImpact('win')
           return currentRound
@@ -492,7 +514,7 @@ function App() {
         return currentRound + 1
       })
     },
-    [difficulty, gameMode, makeImpact, mode, question.answer],
+    [difficulty, gameMode, makeImpact, mode, question.answer, turnPlayer],
   )
 
   useEffect(() => {
@@ -582,6 +604,8 @@ function App() {
     setPhase('playing')
     setRound(1)
     setScores({ one: 0, two: 0 })
+    setTurnPlayer('one')
+    setTurnTimes({ one: 0, two: 0 })
     setStreaks({ one: 0, two: 0 })
     setPull(0)
     setQuestion(makeQuestion(mode, difficulty))
@@ -594,6 +618,20 @@ function App() {
     setCpuAttemptedRound(0)
     setBurst(null)
     setPeakStreak(0)
+  }
+
+  function continueTurn() {
+    unlockAudio(soundOn)
+    playSound(soundOn, 'start')
+    triggerHaptic(hapticsOn, [18, 28, 18])
+    setQuestionStartedAt(Date.now())
+    setSecondsLeft(settings[difficulty].seconds)
+    setFeedback({
+      player: 'two',
+      kind: 'correct',
+      text: `${getDisplayName('two')}, beat ${scores.one} correct answers!`,
+    })
+    setPhase('playing')
   }
 
   function testGameFeel() {
@@ -630,7 +668,13 @@ function App() {
 
   const answerQuestion = useCallback(
     (player: PlayerId, choice: number) => {
-      if (phase !== 'playing' || roundResolved) return
+      if (
+        phase !== 'playing' ||
+        roundResolved ||
+        (gameMode === 'turns' && player !== turnPlayer)
+      ) {
+        return
+      }
 
       playSound(soundOn, 'tap')
       const direction = player === 'one' ? -1 : 1
@@ -660,7 +704,9 @@ function App() {
       const streakBonus = nextStreak >= 2 ? Math.min(10, nextStreak * 2) : 0
       const gain = settings[difficulty].pull + speedBonus + streakBonus
       const feedbackText =
-        streakBonus > 0
+        gameMode === 'turns'
+          ? `${getDisplayName(player)} got it in ${elapsed.toFixed(1)}s`
+          : streakBonus > 0
           ? `${getDisplayName(player)} pulls +${gain} - ${nextStreak} streak`
           : `${getDisplayName(player)} pulls +${gain}`
 
@@ -672,10 +718,16 @@ function App() {
         ...current,
         [player]: nextStreak,
       }))
+      if (gameMode === 'turns') {
+        setTurnTimes((current) => ({
+          ...current,
+          [player]: current[player] + elapsed,
+        }))
+      }
       setPeakStreak((current) => Math.max(current, nextStreak))
       setPull((current) => {
         const nextPull = clampPull(current + direction * gain)
-        if (Math.abs(nextPull) >= ropeLimit) {
+        if (gameMode !== 'turns' && Math.abs(nextPull) >= ropeLimit) {
           window.setTimeout(() => {
             setPhase('gameOver')
             makeImpact('win')
@@ -700,6 +752,7 @@ function App() {
       advanceRound,
       difficulty,
       getDisplayName,
+      gameMode,
       makeImpact,
       phase,
       question.answer,
@@ -707,6 +760,7 @@ function App() {
       roundResolved,
       soundOn,
       streaks,
+      turnPlayer,
     ],
   )
 
@@ -729,7 +783,10 @@ function App() {
 
       if (playerOneIndex >= 0) {
         event.preventDefault()
-        answerQuestion('one', question.choices[playerOneIndex])
+        answerQuestion(
+          gameMode === 'turns' ? turnPlayer : 'one',
+          question.choices[playerOneIndex],
+        )
         return
       }
 
@@ -741,7 +798,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [answerQuestion, gameMode, phase, question.choices])
+  }, [answerQuestion, gameMode, phase, question.choices, turnPlayer])
 
   useEffect(() => {
     if (
@@ -783,7 +840,7 @@ function App() {
   const markerPosition = `${50 + pull / 2}%`
   const roundSeconds = settings[difficulty].seconds
   const timerProgress = Math.max(0, Math.min(100, (secondsLeft / roundSeconds) * 100))
-  const canChangeSettings = phase !== 'playing'
+  const canChangeSettings = phase === 'setup' || phase === 'gameOver'
   const playerTwoProfile =
     gameMode === 'cpu'
       ? cpuProfile
@@ -795,6 +852,8 @@ function App() {
   const keyHint =
     gameMode === 'solo'
       ? 'Solo keys: use A S D F or tap the left answers.'
+      : gameMode === 'turns'
+        ? 'Pass the device after Player 1 finishes. Use A S D F or tap answers.'
       : gameMode === 'cpu'
       ? 'Computer keys: Player 1 uses A S D F. CPU answers automatically.'
       : 'Computer keys: Player 1 uses A S D F. Player 2 uses J K L ;.'
@@ -805,7 +864,9 @@ function App() {
         : arenaTheme === 'car'
           ? 'Answer quickly to keep your car ahead.'
           : 'Answer quickly to keep your runner ahead.'
-      : gameMode === 'cpu'
+      : gameMode === 'turns'
+        ? `${getDisplayName(turnPlayer)} is playing. Score fast and accurately!`
+        : gameMode === 'cpu'
         ? arenaTheme === 'tug'
           ? 'Beat the CPU to the answer.'
           : 'Outrun the CPU to the finish line.'
@@ -815,6 +876,8 @@ function App() {
             ? 'First correct answer gets a turbo boost.'
             : 'First correct answer gets a sprint boost.'
   const boardClassName = `game-board ${arenaTheme}-theme${impact ? ` impact-${impact}` : ''}`
+  const quizPlayer = gameMode === 'turns' ? turnPlayer : 'one'
+  const quizProfile = profiles[quizPlayer]
 
   return (
     <main className="game-shell">
@@ -840,7 +903,7 @@ function App() {
 
           <div className="status-strip" aria-live="polite">
             <div>
-              <span>Round</span>
+              <span>{gameMode === 'turns' ? `${getDisplayName(turnPlayer)} turn` : 'Round'}</span>
               <strong>
                 {round}/{totalRounds}
               </strong>
@@ -889,21 +952,27 @@ function App() {
             choices={question.choices}
             disabled={roundResolved || phase !== 'playing'}
             keyLabels={playerKeys.one.map((key) => key.toUpperCase())}
-            label={getDisplayName('one')}
-            onAnswer={(choice) => answerQuestion('one', choice)}
-            profile={profiles.one}
-            score={scores.one}
-            streak={streaks.one}
+            label={getDisplayName(quizPlayer)}
+            onAnswer={(choice) => answerQuestion(quizPlayer, choice)}
+            profile={quizProfile}
+            score={scores[quizPlayer]}
+            streak={streaks[quizPlayer]}
             wrongChoice={wrongChoice}
             revealedAnswer={revealedAnswer}
           />
 
           <div className="center-stage">
             {arenaTheme === 'tug' ? (
-              <TugTrack burst={burst} markerPosition={markerPosition} pull={pull} />
+              <TugTrack
+                burst={burst}
+                markerPosition={markerPosition}
+                playing={phase === 'playing'}
+                pull={pull}
+              />
             ) : (
               <RaceTrack
                 burst={burst}
+                playing={phase === 'playing'}
                 vehicle={arenaTheme === 'car' ? 'car' : 'runner'}
                 pull={pull}
                 playerOne={profiles.one}
@@ -911,16 +980,28 @@ function App() {
               />
             )}
 
-            <div className="question-card">
-              <span className="operation-label">{question.operation}</span>
-              <strong>{question.prompt} = ?</strong>
-            </div>
+            {phase === 'handoff' ? (
+              <div className="handoff-card" role="status">
+                <span className="handoff-face" aria-hidden="true">{profiles.two.face}</span>
+                <span>Pass the device</span>
+                <strong>{getDisplayName('two')}, are you ready?</strong>
+                <p>{getDisplayName('one')} scored {scores.one}/{totalRounds}. Your questions stay hidden until you begin.</p>
+                <button type="button" onClick={continueTurn}>Start my turn</button>
+              </div>
+            ) : (
+              <div className="question-card">
+                <span className="operation-label">{question.operation}</span>
+                <strong>{question.prompt} = ?</strong>
+              </div>
+            )}
 
             <div
               className={`feedback ${feedback?.kind ?? ''}`}
               aria-live="polite"
             >
-              {phase === 'gameOver'
+              {phase === 'handoff'
+                ? 'Player 2 starts with a fresh timer.'
+                : phase === 'gameOver'
                 ? winner
                 : feedback?.text ?? waitingHint}
             </div>
@@ -929,6 +1010,13 @@ function App() {
 
           {gameMode === 'solo' ? (
             <SoloGoalPanel score={scores.one} streak={streaks.one} />
+          ) : gameMode === 'turns' ? (
+            <TurnScorePanel
+              profiles={profiles}
+              scores={scores}
+              times={turnTimes}
+              turnPlayer={turnPlayer}
+            />
           ) : (
             <PlayerPanel
               accent="coral"
@@ -1005,7 +1093,7 @@ function App() {
             value={difficulty}
           />
           <button className="start-button" type="button" onClick={startGame}>
-            {phase === 'setup' ? 'Start' : 'Restart'}
+            {phase === 'setup' ? 'Start' : phase === 'handoff' ? 'Restart match' : 'Restart'}
           </button>
         </footer>
       </section>
@@ -1016,21 +1104,27 @@ function App() {
 function TugTrack({
   burst,
   markerPosition,
+  playing,
   pull,
 }: {
   burst: Burst | null
   markerPosition: string
+  playing: boolean
   pull: number
 }) {
   return (
-    <div className="rope-wrap" aria-label="Tug of war progress">
+    <div className={`rope-wrap${playing ? ' is-moving' : ''}`} aria-label="Tug of war progress">
       <div className="tug-ground" aria-hidden="true"></div>
-      <img
-        alt="Two competitors pulling a rope"
-        className="tug-competitors"
-        src={`${assetBase}assets/tug-competitors.png`}
+      <div
+        className="tug-travel"
         style={{ transform: `translateX(${pull / 12}px)` }}
-      />
+      >
+        <img
+          alt="Two competitors leaning back and pulling a rope"
+          className="tug-competitors"
+          src={`${assetBase}assets/tug-competitors.png`}
+        />
+      </div>
       <div className="track">
         <span className="track-fill one"></span>
         <span className="track-fill two"></span>
@@ -1045,12 +1139,14 @@ function TugTrack({
 
 function RaceTrack({
   burst,
+  playing,
   pull,
   playerOne,
   playerTwo,
   vehicle,
 }: {
   burst: Burst | null
+  playing: boolean
   pull: number
   playerOne: PlayerProfile
   playerTwo: PlayerProfile
@@ -1061,29 +1157,33 @@ function RaceTrack({
   const ariaLabel = vehicle === 'car' ? 'Car race progress' : 'Sprint race progress'
 
   return (
-    <div className={`race-track ${vehicle === 'car' ? 'car-track' : ''}`} aria-label={ariaLabel}>
+    <div className={`race-track ${vehicle === 'car' ? 'car-track' : ''}${playing ? ' is-moving' : ''}`} aria-label={ariaLabel}>
       <span className="finish-line" aria-hidden="true"></span>
       <div className="race-lane lane-one">
         <span className="lane-label">P1</span>
         <div
           aria-label={`${playerOne.name} is racing`}
-          className={`${vehicleClass} ${vehicleClass}-one`}
-          style={{
-            left: `${50 - pull / 2}%`,
-            backgroundImage: `url(${assetBase}assets/${assetName})`,
-          }}
-        ></div>
+          className={`race-traveler traveler-one`}
+          style={{ left: `${50 - pull / 2}%` }}
+        >
+          <span
+            className={`${vehicleClass} ${vehicleClass}-one`}
+            style={{ backgroundImage: `url(${assetBase}assets/${assetName})` }}
+          ></span>
+        </div>
       </div>
       <div className="race-lane lane-two">
         <span className="lane-label">P2</span>
         <div
           aria-label={`${playerTwo.name} is racing`}
-          className={`${vehicleClass} ${vehicleClass}-two`}
-          style={{
-            left: `${50 + pull / 2}%`,
-            backgroundImage: `url(${assetBase}assets/${assetName})`,
-          }}
-        ></div>
+          className={`race-traveler traveler-two`}
+          style={{ left: `${50 + pull / 2}%` }}
+        >
+          <span
+            className={`${vehicleClass} ${vehicleClass}-two`}
+            style={{ backgroundImage: `url(${assetBase}assets/${assetName})` }}
+          ></span>
+        </div>
       </div>
       <MathBurst burst={burst} />
     </div>
@@ -1201,6 +1301,43 @@ function SoloGoalPanel({ score, streak }: { score: number; streak: number }) {
           <span>Goal</span>
           <strong>{totalRounds}</strong>
         </div>
+      </div>
+    </section>
+  )
+}
+
+function TurnScorePanel({
+  profiles,
+  scores,
+  times,
+  turnPlayer,
+}: {
+  profiles: Record<PlayerId, PlayerProfile>
+  scores: Record<PlayerId, number>
+  times: Record<PlayerId, number>
+  turnPlayer: PlayerId
+}) {
+  return (
+    <section className="player-panel coral turn-score-panel" aria-label="Pass and play scores">
+      <div className="player-banner">
+        <span className="avatar" aria-hidden="true">
+          🏁
+        </span>
+        <div>
+          <h2>Pass & Play</h2>
+          <p>{profiles[turnPlayer].name || defaultName(turnPlayer)} is up</p>
+        </div>
+      </div>
+
+      <div className="turn-score-list">
+        {(['one', 'two'] as const).map((player) => (
+          <div className={player === turnPlayer ? 'active-turn' : ''} key={player}>
+            <span>{profiles[player].face}</span>
+            <strong>{profiles[player].name.trim() || defaultName(player)}</strong>
+            <b>{scores[player]}/{totalRounds}</b>
+            <em>{times[player] > 0 ? `${times[player].toFixed(1)}s` : '--'}</em>
+          </div>
+        ))}
       </div>
     </section>
   )
