@@ -2,6 +2,11 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'r
 import './App.css'
 
 const assetBase = import.meta.env.BASE_URL
+// The arena background is consumed through a CSS custom property (--arena-image),
+// and browsers resolve url() inside custom properties against the stylesheet that
+// uses them (dist/assets/*.css), not the document — so a relative "./assets/…"
+// became "assets/assets/…" (404) on GitHub Pages. Resolve to an absolute URL here.
+const arenaImageUrl = new URL(`${assetBase}assets/number-tug-arena.png`, window.location.href).href
 
 type Operation = 'add' | 'subtract' | 'multiply' | 'divide' | 'mixed'
 type Difficulty = 'easy' | 'medium' | 'hard'
@@ -886,7 +891,7 @@ function App() {
         aria-label="Number Tug game board"
         style={
           {
-            '--arena-image': `url(${assetBase}assets/number-tug-arena.png)`,
+            '--arena-image': `url("${arenaImageUrl}")`,
           } as CSSProperties
         }
       >
